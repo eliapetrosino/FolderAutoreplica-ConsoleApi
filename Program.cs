@@ -1,5 +1,5 @@
-﻿const string source = @"YOUR_SOURCE_ROOT_DIRECTORY";
-const string destination = @"YOUR_DESTINATION_ROOT_DIRECTORY";
+﻿const string source = @"D:\Data";
+const string destination = @"\\192.168.178.1\Orthanc\Realtek-RTL9210NVME-01\Data";
 const int maxRetries = 3;
 const int msRetryDelay = 5000;
 
@@ -70,6 +70,7 @@ static async Task handleFileOperation(string fullPath, WatcherChangeTypes operat
                     Directory.Move(destinationPath, join(newFullPath!));
                     break;
             }
+            break;
         }
         catch (Exception ex)
         {
