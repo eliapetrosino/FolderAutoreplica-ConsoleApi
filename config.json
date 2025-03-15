@@ -1,0 +1,6 @@
+{
+  "source": "D:\\Data",
+  "destination": "\\\\192.168.178.1\\Orthanc\\Realtek-RTL9210NVME-01\\Data",
+  "maxRetries": 3,
+  "retryDelayMillis": 1000
+}

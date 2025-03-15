@@ -1,15 +1,20 @@
-﻿const string source = @"D:\Data";
-const string destination = @"\\192.168.178.1\Orthanc\Realtek-RTL9210NVME-01\Data";
-const int maxRetries = 3;
-const int msRetryDelay = 5000;
+﻿// TODO: Add console parameters to override config.json
+// Move config json and the .exe to C:\Users\%CURRENT_USER%\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
+#if DEBUG
+File.Copy(@"..\..\..\config.json", "config.json", true);
+#endif
+Config config = Json.Net.JsonNet.Deserialize<Config>(File.ReadAllText("config.json"));
 
+string source = config.Source;
+string destination = config.Destination;
+int maxRetries = config.MaxRetries;
+int msRetryDelay = config.RetryDelayMillis;
 
 FileSystemWatcher watcher = new FileSystemWatcher(){
     Path = source,
     Filter = "*.*",
     IncludeSubdirectories = true,
     EnableRaisingEvents = true,
-    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
     InternalBufferSize = 64 * 1024
 };
 
@@ -20,24 +25,22 @@ watcher.Renamed += (_, e) => Task.Run(() => handleFileOperation(e.OldFullPath, e
 await Task.Delay(Timeout.Infinite);
 
 
-static async Task handleFileOperation(string fullPath, WatcherChangeTypes operation,
+async Task handleFileOperation(string fullPath, WatcherChangeTypes operation,
     string? newFullPath = null)
 {
     bool isDir = !Path.HasExtension(fullPath);
-    if (operation == WatcherChangeTypes.Changed && isDir)
+    if (operation == WatcherChangeTypes.Changed && isDir)// escape directory changed event raised when CRUD ops performed on inner files
     {
         return;
     }
+    // TODO: Active event pool by filepath to escape extra Changed events
     await Task.Delay(1000);
     int retryCount = 0;
     while (retryCount < maxRetries)
     {
         try
         {
-            string join(string s)
-                => string.Concat(destination, s.Replace(source, null));
-
-            string destinationPath = join(fullPath);
+            string destinationPath = getDestination(fullPath);
 
             if (!isDir)
             {
@@ -51,7 +54,7 @@ static async Task handleFileOperation(string fullPath, WatcherChangeTypes operat
                         File.Delete(destinationPath);
                         break;
                     case WatcherChangeTypes.Renamed:
-                        await renameAsync(destinationPath, join(newFullPath!));
+                        await renameAsync(destinationPath, getDestination(newFullPath!));
                         break;
                 }
 
@@ -67,29 +70,50 @@ static async Task handleFileOperation(string fullPath, WatcherChangeTypes operat
                     Directory.Delete(destinationPath, true);
                     break;
                 case WatcherChangeTypes.Renamed:
-                    Directory.Move(destinationPath, join(newFullPath!));
+                    Directory.Move(destinationPath, getDestination(newFullPath!));
                     break;
             }
+
+            break;
+
+            
+        }
+        catch (FileNotFoundException)
+        {
             break;
         }
-        catch (Exception ex)
+        catch (DirectoryNotFoundException)
+        {
+            break;
+        }
+        catch (Exception e)
         {
             await Task.Delay(msRetryDelay);
             retryCount++;
         }
     }
-    
-    
-    static async Task copyAsync(string sourceFile, string destFile)
-    {
-        await using FileStream destStream = new(destFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
-        await using FileStream sourceStream = new(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 4096, useAsync: true);
-        await sourceStream.CopyToAsync(destStream);
-    }
-
-    static async Task renameAsync(string sourceFile, string destFile)
-    {
-        await copyAsync(sourceFile, destFile);
-        File.Delete(sourceFile);
-    }
 }
+
+static async Task copyAsync(string sourceFile, string destFile)
+{
+    await using FileStream destStream = new(
+        destFile,
+        FileMode.Create, FileAccess.Write, FileShare.None,
+        bufferSize: 4096, useAsync: true);
+    
+    await using FileStream sourceStream = new(
+        sourceFile,
+        FileMode.Open, FileAccess.Read, FileShare.Read,
+        bufferSize: 4096, useAsync: true);
+    
+    await sourceStream.CopyToAsync(destStream);
+}
+
+static async Task renameAsync(string sourceFile, string destFile)
+{
+    await copyAsync(sourceFile, destFile);
+    File.Delete(sourceFile);
+}
+
+string getDestination(string s)
+    => string.Concat(destination, Path.DirectorySeparatorChar, s.Replace(source, null));
